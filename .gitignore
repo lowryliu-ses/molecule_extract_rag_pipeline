@@ -9,3 +9,8 @@ __pycache__
 data
 results
 pdfs
+data/smiles_latest.xlsx
+data/rag_meta_latest.csv
+data/results/*
+data/rag_meta_latest.csv
+data/smiles_latest.xlsx

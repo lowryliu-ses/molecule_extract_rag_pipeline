@@ -360,8 +360,8 @@ def parse_args(argv=None):
         description="Extract molecules and topics from scientific papers."
     )
 
-    parser.add_argument("--input_path", type=str, default="./results/")
-    parser.add_argument("--output_path", type=str, default="./results/")
+    parser.add_argument("--input_path", type=str, default="./data/results/")
+    parser.add_argument("--output_path", type=str, default="./data/results/")
     parser.add_argument("--data_path", type=str, default="./data/")
     parser.add_argument("--debug", type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument("--n_doc_debug", type=int, default=5)

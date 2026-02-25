@@ -207,16 +207,16 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""
 示例:
   # 运行完整 RAG 管道
-  python run_pipeline.py --pipeline rag --pdf-input ./pdfs --pdf-output ./paper_md
+  python run_pipeline.py --pipeline rag --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md
 
   # 仅运行 RAG 步骤 1-3（跳过 PDF 转换）
-  python run_pipeline.py --pipeline rag --steps 1 2 3 --input ./paper_md
+  python run_pipeline.py --pipeline rag --steps 1 2 3 --input ./papers/paper_md
 
   # 运行完整分子提取管道
-  python run_pipeline.py --pipeline molecule --pdf-input ./pdfs --pdf-output ./paper_md_doi
+  python run_pipeline.py --pipeline molecule --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md_doi
 
   # 同时运行两个管道
-  python run_pipeline.py --pipeline all --pdf-input ./pdfs
+  python run_pipeline.py --pipeline all --pdf-input ./papers/pdfs
 
 环境变量:
   OPENAI_API_KEY    — 文档标记 & DOI/元数据提取（必须）
@@ -264,12 +264,12 @@ def build_parser() -> argparse.ArgumentParser:
     # 通用参数
     parser.add_argument(
         "--input",
-        default="./paper_md",
+        default="./papers/paper_md",
         help="包含 Markdown 文件的目录（步骤 1+ 使用；跳过步骤 0 时必需）",
     )
     parser.add_argument(
         "--output",
-        default="./artifacts",
+        default="./data/artifacts",
         help="RAG 工件输出目录 (默认: ./artifacts)",
     )
 
@@ -289,13 +289,13 @@ def build_parser() -> argparse.ArgumentParser:
     mol_group = parser.add_argument_group("分子提取管道参数")
     mol_group.add_argument(
         "--jsonl-dir",
-        default="./paper_jsonl",
-        help="JSONL 文件输出目录 (默认: ./paper_jsonl)",
+        default="./papers/paper_jsonl",
+        help="JSONL 文件输出目录 (默认: ./papers/paper_jsonl)",
     )
     mol_group.add_argument(
         "--temp-meta-path",
-        default="./temp_meta.csv",
-        help="临时元数据 CSV 文件路径 (默认: ./temp_meta.csv)",
+        default="./data/temp_meta.csv",
+        help="临时元数据 CSV 文件路径 (默认: ./data/temp_meta.csv)",
     )
 
     return parser

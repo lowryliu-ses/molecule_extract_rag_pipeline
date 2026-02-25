@@ -44,21 +44,21 @@ def get_parser(argv=None):
         "--input_molecule_extracted_csv",
         type=str,
         default=
-        "./smiles_latest.xlsx",  ### This needs to be the latest molecule table.
+        "./data/smiles_latest.xlsx",  ### This needs to be the latest molecule table.
         help=
         "The smiles table to which we want to add the newly extracted molecules",
     )
     parser.add_argument(
         "--input_rag_meta_csv",
         type=str,
-        default="./rag_meta_latest.csv", ### This needs to be the latest molecule table.
+        default="./data/rag_meta_latest.csv", ### This needs to be the latest molecule table.
         help="The smiles table to which we want to add the newly extracted molecules",
     )
     parser.add_argument(
         "--input_molecules_detailed_info",
         type=str,
         default=
-        "./results/molecules_detailed_info.json",
+        "./data/results/molecules_detailed_info.json",
         help="The json file containing all the extracted molecules",
     )
 
@@ -66,7 +66,7 @@ def get_parser(argv=None):
         "--temp_molecule_extracted_csv",
         type=str,
         default=
-        "./temp_molecule_extracted.xlsx",
+        "./data/temp_molecule_extracted.xlsx",
         help=
         "This table will be created. It will contain the smiles table updated with the new molecules.",
     )
@@ -90,7 +90,7 @@ def get_parser(argv=None):
         "--output_duplicate_synonyms",
         type=str,
         default=
-        "./duplicates_smiles_test.json",
+        "./data/duplicates_smiles_test.json",
         help=
         "This file will be created. I will contain duplicate synonyms (as a sanity check).",
     )
