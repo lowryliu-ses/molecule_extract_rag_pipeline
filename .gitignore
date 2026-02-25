@@ -1,0 +1,11 @@
+.env
+config.json
+private_key
+temp_meta.csv
+paper_md
+paper_jsonl
+artifacts
+__pycache__
+data
+results
+pdfs
