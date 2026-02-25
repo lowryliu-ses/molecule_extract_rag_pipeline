@@ -70,27 +70,21 @@ def _build_converter(device: str = "cuda") -> DocumentConverter:
 def _fix_artifacts_dir(output_dir: Path, doc_file_name: str) -> None:
     """
     修复 artifact 目录路径问题：
-    如果存在嵌套的 paper_md/xxx/xxx_artifacts 结构，将其移动到正确位置。
+    如果存在嵌套的 xxx/xxx_artifacts 结构，将其移动到正确位置，
+    并递归清理 output_dir 内所有因此产生的空中间目录。
     """
     expected_artifacts_dir = output_dir / f"{doc_file_name}_artifacts"
     nested_artifacts_dirs = list(output_dir.rglob(f"{doc_file_name}_artifacts"))
-    dirs_to_cleanup = []
 
     for nested_dir in nested_artifacts_dirs:
         if nested_dir == expected_artifacts_dir or not nested_dir.is_dir():
             continue
 
-        nested_path = Path(nested_dir)
-        parent_path = nested_path.parent
-        grandparent_path = parent_path.parent if parent_path else None
+        start_cleanup_from = nested_dir.parent
 
         if not expected_artifacts_dir.exists():
             nested_dir.rename(expected_artifacts_dir)
             _log.info(f"移动 artifacts 目录: {nested_dir} -> {expected_artifacts_dir}")
-            if parent_path.exists() and parent_path.name == doc_file_name:
-                dirs_to_cleanup.append(parent_path)
-            if grandparent_path and grandparent_path.exists() and grandparent_path.name == "paper_md":
-                dirs_to_cleanup.append(grandparent_path)
         else:
             for item in nested_dir.iterdir():
                 dest = expected_artifacts_dir / item.name
@@ -111,17 +105,20 @@ def _fix_artifacts_dir(output_dir: Path, doc_file_name: str) -> None:
                     shutil.rmtree(nested_dir)
             except Exception as e:
                 _log.warning(f"删除嵌套目录失败: {nested_dir}, 错误: {e}")
-            if parent_path.exists() and parent_path.name == doc_file_name:
-                dirs_to_cleanup.append(parent_path)
-            if grandparent_path and grandparent_path.exists() and grandparent_path.name == "paper_md":
-                dirs_to_cleanup.append(grandparent_path)
 
-    for dir_to_clean in dirs_to_cleanup:
-        try:
-            if dir_to_clean.exists() and not any(dir_to_clean.iterdir()):
-                dir_to_clean.rmdir()
-        except Exception as e:
-            _log.warning(f"清理中间目录失败: {dir_to_clean}, 错误: {e}")
+        # 从 nested_dir 的父目录向上逐级清理所有空目录，直到 output_dir 为止
+        current = start_cleanup_from
+        while current != output_dir:
+            try:
+                if current.exists() and not any(current.iterdir()):
+                    current.rmdir()
+                    _log.debug(f"清理空中间目录: {current}")
+                else:
+                    break
+            except Exception as e:
+                _log.warning(f"清理中间目录失败: {current}, 错误: {e}")
+                break
+            current = current.parent
 
 
 def _fix_md_image_paths(md_filename: Path, doc_file_name: str) -> None:

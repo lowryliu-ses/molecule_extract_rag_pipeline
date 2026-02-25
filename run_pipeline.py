@@ -7,6 +7,10 @@
 
 管道流程:
 
+  PDF 转换管道 (--pipeline pdf):
+    仅执行 PDF → Markdown  [pdf_converter.py]
+    使用 --use-doi 开关控制命名模式（默认原始文件名）
+
   RAG 管道 (--pipeline rag):
     步骤 0 (共享): PDF → Markdown  [pdf_converter.py, 原文件名模式]
     步骤 1: 文档标记               [rag/tagger.py, 使用 OpenAI]
@@ -18,6 +22,10 @@
     步骤 1: Markdown → JSONL       [molecule/md_to_jsonl.py]
     步骤 2: Snowflake 元数据更新   [molecule/extract_metadata.py]
     步骤 3: 分子提取 + 入库        [molecule/llm_judge/code/]
+
+  全量管道 (--pipeline all):
+    当步骤包含 0 时，PDF → Markdown 在顶层只执行一次（RAG 和分子管道各一次，
+    分别使用不同命名模式），子管道直接接收已转换的目录，不再重复转换。
 
 环境变量:
   OPENAI_API_KEY    — RAG 文档标记 & 分子管道 DOI/元数据提取
@@ -50,14 +58,42 @@ def _section(title: str) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# PDF 独立转换管道
+# ──────────────────────────────────────────────────────────────────────────────
+
+def run_pdf_only_pipeline(args) -> Path:
+    """仅执行 PDF → Markdown 转换，返回输出目录路径"""
+    _section("PDF → Markdown 转换")
+
+    from pdf_converter import step_pdf_to_markdown
+
+    if not args.pdf_input:
+        raise ValueError("--pipeline pdf 需要 --pdf-input 参数。")
+
+    use_doi: bool = getattr(args, "use_doi", False)
+    output_path = step_pdf_to_markdown(
+        args.pdf_input,
+        args.pdf_output or args.input or "./paper_md",
+        max_workers=args.max_workers,
+        use_doi=use_doi,
+    )
+    if not output_path:
+        raise RuntimeError("PDF 转 Markdown 失败：未找到任何 PDF 文件。")
+
+    _section("PDF → Markdown 转换完成")
+    return output_path
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 步骤执行器：RAG 管道
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run_rag_pipeline(args, script_dir: Path) -> None:
-    """执行 RAG 管道的所有指定步骤"""
-    _section("RAG 管道")
+def run_rag_pipeline(args, script_dir: Path, pre_converted_dir: Path | None = None) -> None:
+    """执行 RAG 管道的所有指定步骤。
 
-    from pdf_converter import step_pdf_to_markdown
+    pre_converted_dir: 若已在外部完成 PDF→Markdown 转换，传入结果目录可跳过 step 0。
+    """
+    _section("RAG 管道")
 
     steps = _resolve_steps(args.steps)
     print(f"执行步骤: {', '.join(steps)}")
@@ -66,17 +102,23 @@ def run_rag_pipeline(args, script_dir: Path) -> None:
 
     # 步骤 0: PDF → Markdown（原文件名模式）
     if "0" in steps:
-        if not args.pdf_input:
-            raise ValueError("步骤 0 需要 --pdf-input 参数。")
-        output_path = step_pdf_to_markdown(
-            args.pdf_input,
-            args.pdf_output or args.input or "./paper_md",
-            max_workers=args.max_workers,
-            use_doi=False,
-        )
-        if not output_path:
-            raise RuntimeError("PDF 转 Markdown 失败：未找到任何 PDF 文件。")
-        input_dir = output_path
+        if pre_converted_dir is not None:
+            # 已由顶层转换，直接使用
+            input_dir = pre_converted_dir
+            print(f"\n[步骤 0 已共享] 使用预转换目录: {input_dir}")
+        else:
+            from pdf_converter import step_pdf_to_markdown
+            if not args.pdf_input:
+                raise ValueError("步骤 0 需要 --pdf-input 参数。")
+            output_path = step_pdf_to_markdown(
+                args.pdf_input,
+                args.pdf_output or args.input or "./paper_md",
+                max_workers=args.max_workers,
+                use_doi=False,
+            )
+            if not output_path:
+                raise RuntimeError("PDF 转 Markdown 失败：未找到任何 PDF 文件。")
+            input_dir = output_path
     else:
         if not args.input:
             raise ValueError("跳过步骤 0 时必须提供 --input 参数。")
@@ -127,11 +169,12 @@ def run_rag_pipeline(args, script_dir: Path) -> None:
 # 步骤执行器：分子提取管道
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run_molecule_pipeline(args, script_dir: Path) -> None:
-    """执行分子提取管道的所有指定步骤"""
-    _section("分子提取管道")
+def run_molecule_pipeline(args, script_dir: Path, pre_converted_dir: Path | None = None) -> None:
+    """执行分子提取管道的所有指定步骤。
 
-    from pdf_converter import step_pdf_to_markdown
+    pre_converted_dir: 若已在外部完成 PDF→Markdown 转换，传入结果目录可跳过 step 0。
+    """
+    _section("分子提取管道")
 
     steps = _resolve_steps(args.steps)
     print(f"执行步骤: {', '.join(steps)}")
@@ -142,17 +185,25 @@ def run_molecule_pipeline(args, script_dir: Path) -> None:
 
     # 步骤 0: PDF → Markdown（DOI 命名模式）
     if "0" in steps:
-        if not args.pdf_input:
-            raise ValueError("步骤 0 需要 --pdf-input 参数。")
-        output_path = step_pdf_to_markdown(
-            args.pdf_input,
-            args.pdf_output or args.input or "./paper_md",
-            max_workers=args.max_workers,
-            use_doi=True,
-        )
-        if not output_path:
-            raise RuntimeError("PDF 转 Markdown 失败：未找到任何 PDF 文件。")
-        md_dir = str(output_path)
+        if pre_converted_dir is not None:
+            # 已由顶层转换，直接使用
+            md_dir = str(pre_converted_dir)
+            print(f"\n[步骤 0 已共享] 使用预转换目录: {md_dir}")
+        else:
+            from pdf_converter import step_pdf_to_markdown
+            if not args.pdf_input:
+                raise ValueError("步骤 0 需要 --pdf-input 参数。")
+            # 分子管道使用独立输出目录（--pdf-output-mol 或自动推断）
+            mol_output = _resolve_mol_output(args)
+            output_path = step_pdf_to_markdown(
+                args.pdf_input,
+                mol_output,
+                max_workers=args.max_workers,
+                use_doi=True,
+            )
+            if not output_path:
+                raise RuntimeError("PDF 转 Markdown 失败：未找到任何 PDF 文件。")
+            md_dir = str(output_path)
     else:
         if not args.input:
             raise ValueError("跳过步骤 0 时必须提供 --input 参数。")
@@ -187,6 +238,23 @@ def run_molecule_pipeline(args, script_dir: Path) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 辅助：推断分子管道 Markdown 输出目录
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _resolve_mol_output(args) -> str:
+    """返回分子管道 PDF→MD 的输出目录字符串。
+
+    优先级：--pdf-output-mol > --input > --pdf-output 加 _doi 后缀 > 默认值
+    """
+    if getattr(args, "pdf_output_mol", None):
+        return args.pdf_output_mol
+    if args.input and args.input != "./papers/paper_md":
+        return args.input
+    base = args.pdf_output or "./paper_md"
+    return str(Path(base).with_name(Path(base).name + "_doi"))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 步骤解析
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -206,6 +274,12 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
+  # 仅转换 PDF → Markdown（原始文件名）
+  python run_pipeline.py --pipeline pdf --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md
+
+  # 仅转换 PDF → Markdown（DOI 命名）
+  python run_pipeline.py --pipeline pdf --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md_doi --use-doi
+
   # 运行完整 RAG 管道
   python run_pipeline.py --pipeline rag --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md
 
@@ -213,10 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
   python run_pipeline.py --pipeline rag --steps 1 2 3 --input ./papers/paper_md
 
   # 运行完整分子提取管道
-  python run_pipeline.py --pipeline molecule --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md_doi
+  python run_pipeline.py --pipeline molecule --pdf-input ./papers/pdfs --pdf-output-mol ./papers/paper_md_doi
 
-  # 同时运行两个管道
-  python run_pipeline.py --pipeline all --pdf-input ./papers/pdfs
+  # 同时运行两个管道（PDF 转换各执行一次，不重复）
+  python run_pipeline.py --pipeline all --pdf-input ./papers/pdfs --pdf-output ./papers/paper_md --pdf-output-mol ./papers/paper_md_doi
 
 环境变量:
   OPENAI_API_KEY    — 文档标记 & DOI/元数据提取（必须）
@@ -228,18 +302,18 @@ def build_parser() -> argparse.ArgumentParser:
     # 管道选择
     parser.add_argument(
         "--pipeline",
-        choices=["rag", "molecule", "all"],
+        choices=["pdf", "rag", "molecule", "all"],
         default="all",
         help="要执行的管道 (默认: all)",
     )
 
-    # 步骤选择
+    # 步骤选择（--pipeline pdf 时忽略此参数）
     parser.add_argument(
         "--steps",
         nargs="+",
         choices=["0", "1", "2", "3", "all"],
         default=["all"],
-        help="要执行的步骤 (默认: all)",
+        help="要执行的步骤 (默认: all)；--pipeline pdf 时无效",
     )
 
     # PDF 转换参数（步骤 0，两个管道共用）
@@ -252,7 +326,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pdf-output",
         default=None,
-        help="PDF 转 Markdown 的输出目录（步骤 0 使用；不指定则使用 --input）",
+        help="PDF 转 Markdown 的输出目录，RAG 管道使用（原始文件名模式）",
+    )
+    parser.add_argument(
+        "--pdf-output-mol",
+        default=None,
+        dest="pdf_output_mol",
+        help=(
+            "分子提取管道 PDF 转 Markdown 的输出目录（DOI 命名模式）；"
+            "不指定时自动在 --pdf-output 目录名后追加 _doi 后缀"
+        ),
+    )
+    parser.add_argument(
+        "--use-doi",
+        action="store_true",
+        default=False,
+        dest="use_doi",
+        help="--pipeline pdf 时使用 DOI 命名模式（默认使用原始文件名）",
     )
     parser.add_argument(
         "--max-workers",
@@ -316,17 +406,56 @@ def main() -> None:
     print(f"步骤: {args.steps}")
     print(f"脚本目录: {script_dir}")
 
-    pipelines_to_run = []
-    if args.pipeline == "all":
-        pipelines_to_run = ["rag", "molecule"]
-    else:
-        pipelines_to_run = [args.pipeline]
+    # ── 独立 PDF 转换管道 ────────────────────────────────────────────────────
+    if args.pipeline == "pdf":
+        run_pdf_only_pipeline(args)
+        return
 
-    for pipeline in pipelines_to_run:
-        if pipeline == "rag":
+    # ── 单管道 ───────────────────────────────────────────────────────────────
+    if args.pipeline != "all":
+        if args.pipeline == "rag":
             run_rag_pipeline(args, script_dir)
-        elif pipeline == "molecule":
+        elif args.pipeline == "molecule":
             run_molecule_pipeline(args, script_dir)
+        _section("所有管道执行完毕")
+        return
+
+    # ── all 模式：提升 PDF 转换到顶层，避免重复执行 ──────────────────────────
+    steps = _resolve_steps(args.steps)
+
+    rag_md_dir: Path | None = None
+    mol_md_dir: Path | None = None
+
+    if "0" in steps:
+        from pdf_converter import step_pdf_to_markdown
+
+        if not args.pdf_input:
+            raise ValueError("步骤 0 需要 --pdf-input 参数。")
+
+        _section("共享步骤 0a：PDF → Markdown（RAG，原始文件名）")
+        rag_output = args.pdf_output or args.input or "./paper_md"
+        rag_md_dir = step_pdf_to_markdown(
+            args.pdf_input,
+            rag_output,
+            max_workers=args.max_workers,
+            use_doi=False,
+        )
+        if not rag_md_dir:
+            raise RuntimeError("RAG PDF 转 Markdown 失败：未找到任何 PDF 文件。")
+
+        _section("共享步骤 0b：PDF → Markdown（分子提取，DOI 命名）")
+        mol_output = _resolve_mol_output(args)
+        mol_md_dir = step_pdf_to_markdown(
+            args.pdf_input,
+            mol_output,
+            max_workers=args.max_workers,
+            use_doi=True,
+        )
+        if not mol_md_dir:
+            raise RuntimeError("分子提取 PDF 转 Markdown 失败：未找到任何 PDF 文件。")
+
+    run_rag_pipeline(args, script_dir, pre_converted_dir=rag_md_dir)
+    run_molecule_pipeline(args, script_dir, pre_converted_dir=mol_md_dir)
 
     _section("所有管道执行完毕")
 

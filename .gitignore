@@ -14,3 +14,5 @@ data/rag_meta_latest.csv
 data/results/*
 data/rag_meta_latest.csv
 data/smiles_latest.xlsx
+papers/paper_md_doi/*
+papers/paper_md/*
